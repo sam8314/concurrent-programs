@@ -26,6 +26,10 @@ pthread_mutex_t result_mutex; // mutex for global result variables
 int global_sum = 0;           // global sum protected by result_mutex
 int global_min = INT_MAX; // global min protected by result_mutex
 int global_max = INT_MIN; // global max protected by result_mutex
+int global_min_row = 0;   // row position of global min
+int global_min_col = 0;   // column position of global min
+int global_max_row = 0;   // row position of global max
+int global_max_col = 0;   // column position of global max
 bool all_workers_done = false; 
 
 int numWorkers, size, stripSize;
@@ -106,8 +110,8 @@ int main(int argc, char *argv[]) {
   end_time = read_timer();
   printf("\n======RESULTS======\n");
   printf("The total is %d\n", global_sum);
-  printf("The global min is %d\n", global_min);
-  printf("The global max is %d\n", global_max);
+  printf("The global min is %d at (%d,%d)\n", global_min, global_min_row, global_min_col);
+  printf("The global max is %d at (%d,%d)\n", global_max, global_max_row, global_max_col);
   printf("The execution time is %g sec\n", end_time - start_time);
   printf("=====================\n");
 
@@ -118,21 +122,29 @@ int main(int argc, char *argv[]) {
     int seq_sum = 0;
     int seq_min = INT_MAX;
     int seq_max = INT_MIN;
+    int seq_min_row = 0, seq_min_col = 0;
+    int seq_max_row = 0, seq_max_col = 0;
     for (i = 0; i < size; i++) {
         for (j = 0; j < size; j++) {
             int val = matrix[i][j];
             seq_sum += val;
-            if (val < seq_min)
+            if (val < seq_min) {
                 seq_min = val;
-            if (val > seq_max)
+                seq_min_row = i;
+                seq_min_col = j;
+            }
+            if (val > seq_max) {
                 seq_max = val;
+                seq_max_row = i;
+                seq_max_col = j;
+            }
         }
     }
     end_time = read_timer();
     printf("\n======SEQUENTIAL VERIFICATION OF RESULTS======\n");
     printf("The total is %d\n", seq_sum);
-    printf("The global min is %d\n", seq_min);
-    printf("The global max is %d\n", seq_max);
+    printf("The global min is %d at (%d,%d)\n", seq_min, seq_min_row, seq_min_col);
+    printf("The global max is %d at (%d,%d)\n", seq_max, seq_max_row, seq_max_col);
     printf("The execution time is %g sec\n", end_time - start_time);
     printf("=============================================\n");  
 
@@ -146,6 +158,8 @@ int main(int argc, char *argv[]) {
 void *Worker(void *arg) {
     long myid = (long) arg;
     int my_sum = 0, my_min = INT_MAX, my_max = INT_MIN;
+    int my_min_row = 0, my_min_col = 0;
+    int my_max_row = 0, my_max_col = 0;
     int i, j, first, last;
 
     printf("\nWorker %ld (pthread id %ld) has started\n", myid, pthread_self());
@@ -167,21 +181,37 @@ void *Worker(void *arg) {
         for (j = 0; j < size ; j++){
             int val = matrix[i][j];
             my_sum += val;
-            if (val < my_min) my_min = val;
-            if (val > my_max) my_max = val;
+            if (val < my_min) {
+                my_min = val;
+                my_min_row = i;
+                my_min_col = j;
+            }
+            if (val > my_max) {
+                my_max = val;
+                my_max_row = i;
+                my_max_col = j;
+            }
         }
     }
 
     /* print strip min and max*/
-    printf("Worker %ld: strip min is %d\n", myid, my_min);
-    printf("Worker %ld: strip max is %d\n", myid, my_max);
+    printf("Worker %ld: strip min is %d at (%d,%d)\n", myid, my_min, my_min_row, my_min_col);
+    printf("Worker %ld: strip max is %d at (%d,%d)\n", myid, my_max, my_max_row, my_max_col);
     printf("Worker %ld: strip sum is %d\n", myid, my_sum);
 
     /*atomically update global results CRITICAL SECTION*/
     pthread_mutex_lock(&result_mutex);
     global_sum += my_sum;
-    if (my_min < global_min) global_min = my_min;
-    if (my_max > global_max) global_max = my_max;
+    if (my_min < global_min) {
+        global_min = my_min;
+        global_min_row = my_min_row;
+        global_min_col = my_min_col;
+    }
+    if (my_max > global_max) {
+        global_max = my_max;
+        global_max_row = my_max_row;
+        global_max_col = my_max_col;
+    }
     pthread_mutex_unlock(&result_mutex);  
 
     pthread_exit(NULL);
