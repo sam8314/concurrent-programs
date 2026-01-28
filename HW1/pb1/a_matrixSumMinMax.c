@@ -58,6 +58,10 @@ int size, stripSize;  /* assume size is multiple of numWorkers */
 int sums[MAXWORKERS]; /* partial sums */
 int partial_min[MAXWORKERS]; /* partial mins */
 int partial_max[MAXWORKERS]; /* partial maxs */
+int minRow[MAXWORKERS]; 
+int minCol[MAXWORKERS]; 
+int maxRow[MAXWORKERS]; 
+int maxCol[MAXWORKERS];
 int matrix[MAXSIZE][MAXSIZE]; /* matrix */
 
 void *Worker(void *);
@@ -109,21 +113,29 @@ int main(int argc, char *argv[]) {
     int seq_sum = 0;
     int seq_min = INT_MAX;
     int seq_max = INT_MIN;
+    int seq_min_row = 0, seq_min_col = 0; 
+    int seq_max_row = 0, seq_max_col = 0;
     for (i = 0; i < size; i++) {
         for (j = 0; j < size; j++) {
             int val = matrix[i][j];
             seq_sum += val;
-            if (val < seq_min)
+            if (val < seq_min) {
                 seq_min = val;
-            if (val > seq_max)
+                seq_min_row = i; 
+                seq_min_col = j; 
+            }
+            if (val > seq_max) {
                 seq_max = val;
+                seq_max_row = i; 
+                seq_max_col = j;
+            }
         }
     }
     end_time = read_timer();
     printf("\n======SEQUENTIAL VERIFICATION OF RESULTS======\n");
     printf("The total is %d\n", seq_sum);
-    printf("The global min is %d\n", seq_min);
-    printf("The global max is %d\n", seq_max);
+    printf("The global min is %d at (%d,%d)\n", seq_min, seq_min_row, seq_min_col); 
+    printf("The global max is %d at (%d,%d)\n", seq_max, seq_max_row, seq_max_col); 
     printf("The execution time is %g sec\n", end_time - start_time);
     printf("=============================================\n");  
 
@@ -142,6 +154,8 @@ int main(int argc, char *argv[]) {
 void *Worker(void *arg) {
   long myid = (long) arg;
   int total, i, j, first, last, strip_min, strip_max;
+  int strip_min_row, strip_min_col;
+  int strip_max_row, strip_max_col; 
 
   printf("\nWorker %ld (pthread id %ld) has started\n", myid, pthread_self());
 
@@ -155,22 +169,36 @@ void *Worker(void *arg) {
   /* find min and max of the strip*/
   strip_min = matrix[first][0]; 
   strip_max = matrix[first][0];
+  strip_min_row = first; 
+  strip_min_col = 0;     
+  strip_max_row = first; 
+  strip_max_col = 0;     
 
   for (i = first; i <= last; i++)
     for (j = 0; j < size; j++) {
       printf(" %d", matrix[i][j]);
-      if (matrix[i][j] < strip_min)
+      if (matrix[i][j] < strip_min) {
         strip_min = matrix[i][j];
-      if (matrix[i][j] > strip_max)
+        strip_min_row = i; 
+        strip_min_col = j;
+      }
+      if (matrix[i][j] > strip_max) {
         strip_max = matrix[i][j];
+        strip_max_row = i;
+        strip_max_col = j;
+      }
     }
   printf(" ]\n");
 
   partial_min[myid] = strip_min;
   partial_max[myid] = strip_max;
+  minRow[myid] = strip_min_row; 
+  minCol[myid] = strip_min_col; 
+  maxRow[myid] = strip_max_row; 
+  maxCol[myid] = strip_max_col;
 
-  printf("Worker %ld: strip min is %d\n", myid, strip_min);
-  printf("Worker %ld: strip max is %d\n", myid, strip_max);
+  printf("Worker %ld: strip min is %d at (%d,%d)\n", myid, strip_min, strip_min_row, strip_min_col); 
+  printf("Worker %ld: strip max is %d at (%d,%d)\n", myid, strip_max, strip_max_row, strip_max_col);
 
   /* sum values in my strip */
   total = 0;
@@ -187,13 +215,23 @@ void *Worker(void *arg) {
     total = 0;
     int global_min = partial_min[0];
     int global_max = partial_max[0];
+    int global_min_row = minRow[0];
+    int global_min_col = minCol[0]; 
+    int global_max_row = maxRow[0]; 
+    int global_max_col = maxCol[0];
 
     /*compute global min and max*/
     for (i = 0; i < numWorkers; i++) {
-      if (partial_min[i] < global_min)
+      if (partial_min[i] < global_min) {
         global_min = partial_min[i];
-      if (partial_max[i] > global_max)
+        global_min_row = minRow[i]; 
+        global_min_col = minCol[i]; 
+      }
+      if (partial_max[i] > global_max) {
         global_max = partial_max[i];
+        global_max_row = maxRow[i]; 
+        global_max_col = maxCol[i]; 
+      }
     }
 
     for (i = 0; i < numWorkers; i++)
@@ -205,8 +243,8 @@ void *Worker(void *arg) {
     /* print results */
     printf("\n======RESULTS======\n");
     printf("The total is %d\n", total);
-    printf("The global min is %d\n", global_min);
-    printf("The global max is %d\n", global_max);
+    printf("The global min is %d at (%d,%d)\n", global_min, global_min_row, global_min_col); 
+    printf("The global max is %d at (%d,%d)\n", global_max, global_max_row, global_max_col); 
     printf("The execution time is %g sec\n", end_time - start_time);
     printf("===================\n");
   }
