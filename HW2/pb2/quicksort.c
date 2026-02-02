@@ -71,13 +71,53 @@ double findMedian(double arr[], int n) {
         return arr[n / 2];
     }
 }
+void swap (int* a, int* b) {
+    int t = *a;
+    *a = *b;
+    *b = t;
+}
+int split(int arr[], int low, int high) {
+    int pivot = arr[high]; 
+    int i = (low-1);
 
-/* QUICKSORT ALGOs*/
+    for (int j=low;j<=high-1; j++) {
+        if (arr[j] <= pivot) {
+            i++; 
+            swap(&arr[i], &arr[j]);
+        }
+    }
+    swap(&arr[i+1], &arr[high]);
+    return (i+1);
+}
+
+/* QUICKSORTS */
+void seqQuickSort(int arr[], int low, int high) {
+    if (low < high) {
+        int splitIdx = split(arr, low, high);
+        seqQuickSort(arr, low, splitIdx-1);
+        seqQuickSort(arr, splitIdx+1, high);
+    }
+}
+void parQuickSort(int arr[], int low, int high) {
+    if (low < high) {
+        int splitIdx = split(arr, low, high);
+
+        #pragma omp task shared(arr) if(high-low>1000)
+        parQuickSort(arr, low, splitIdx-1);
+
+        #pragma omp task shared(arr) if(high-low>1000)
+        parQuickSort(arr, splitIdx+1, high);
+
+        #pragma omp taskwait // wait for both tasks to finish
+    }
+}
+
+/* WRAPPERS WITH TIMERS */
 double sequential(bool print, int list[], int size) {
   /* SEQUENTIAL VERIFICATION OF RESULTS*/
   start_time = omp_get_wtime();
 
-  qsort(list, size, sizeof(int), compare); // TODO : actually rewrite sequential quick sort ???
+  seqQuickSort(list, 0, size-1);
 
   end_time = omp_get_wtime();
 
@@ -88,7 +128,6 @@ double sequential(bool print, int list[], int size) {
   }
   return end_time - start_time;
 }
-
 double parallel(bool print, int list[], int size) {
   /* PARALLELE WORK*/
   start_time = omp_get_wtime();
@@ -97,7 +136,7 @@ double parallel(bool print, int list[], int size) {
   {
     #pragma omp single
     {
-      qsort(list, size, sizeof(int), compare); // TODO : actually rewrite parallel quick sort with tasks ???
+        parQuickSort(list, 0, size-1);
     }
   }
 
@@ -110,7 +149,6 @@ double parallel(bool print, int list[], int size) {
   }
   return end_time - start_time;
 }
-
 
 /* MAIN THREAD */
 int main(int argc, char *argv[]) {
