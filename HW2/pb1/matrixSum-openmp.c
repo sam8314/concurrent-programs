@@ -24,7 +24,7 @@ int numWorkers;
 int size; 
 int matrix[MAXSIZE][MAXSIZE];
 
-/* timer helper function */
+/* HELPER FUNCTIONS */
 double read_timer() {
     static bool initialized = false;
     static struct timeval start;
@@ -119,7 +119,23 @@ double parallel(bool print, int matrix[MAXSIZE][MAXSIZE], int size){
   }
   return end_time - start_time;
 }
+int compare(const void *a, const void *b) {
+    return (*(int *)a - *(int *)b);  
+}
+double findMedian(double arr[], int n) {
+    qsort(arr, n, sizeof(int), compare);
 
+  	// If even, median is the average of the two
+  	// middle elements
+    if (n % 2 == 0) {
+        return (arr[n / 2 - 1] + arr[n / 2]) / 2.0;
+    }
+  
+  	// If odd, median is the middle element
+  	else {
+        return arr[n / 2];
+    }
+}
 
 int main(int argc, char *argv[]) {
   int i, j, total=0;
@@ -146,22 +162,24 @@ int main(int argc, char *argv[]) {
   }
 
   /* store runtime time, speedup in output file with different sizes and number of workers
-    run it 10 times and take average, and the mean values for runtimes
+    run it 5 times and take median values for runtimes
     matrix size follows 10, 100, 1000, ..., MAXSIZE
     number of workers follows 1, 2, 3, ..., MAXWORKERS
   */
   else{
     int matrixSize[] = {1000,2000,3000,4000,5000,6000,7000,8000,9000,10000};
     FILE *fp = fopen("results.txt", "w");
-    fprintf(fp, "Size \t NumWorkers \t AvgParTime \t AvgSeqTime \t Speedup\n");
+    fprintf(fp, "Size \t NumWorkers \t MedParTime \t MedSeqTime \t Speedup\n");
+    printf("opened file\n");
 
     //loop on matrix sizes
-    for (int sizeIdx = 0; sizeIdx < len(matrixSize); sizeIdx++){
+    for (int sizeIdx = 0; sizeIdx < sizeof(matrixSize)/sizeof(matrixSize[0]); sizeIdx++){
       size = matrixSize[sizeIdx];
 
-      double avg_par_time = 0;
-      double avg_seq_time = 0;
-      for (int run = 0; run < 10; run++){
+      double par_times[5];
+      double seq_times[5];
+      for (int run = 0; run < 5; run++){
+        printf("Running size %d, run %d\n", size, run+1);
         /* initialize the matrix sequentially*/
         srand(time(NULL));
         for (i = 0; i < size; i++) {
@@ -171,19 +189,18 @@ int main(int argc, char *argv[]) {
         }
         double par_time = parallel(false, matrix, size);
         double seq_time = sequential(false, matrix, size);
-        avg_par_time += par_time;
-        avg_seq_time += seq_time;
+        par_times[run] = par_time;
+        seq_times[run] = seq_time;
       }
-      avg_par_time /= 10.0;
-      avg_seq_time /= 10.0;
-      double speedup = avg_seq_time / avg_par_time;
+      double med_seq_time = findMedian(seq_times, 5);
+      double med_par_time = findMedian(par_times, 5);
 
-        fprintf(fp, "%d \t %d \t %g \t %g \t %g\n", size, numWorkers, avg_par_time, avg_seq_time, speedup);
-      }
+      double speedup = med_seq_time / med_par_time;
+      fprintf(fp, "%d \t %d \t %g \t %g \t %g\n", size, numWorkers, med_par_time, med_seq_time, speedup);
     }
     fclose(fp);
+    printf("closed file\n");
   }
-
 
   return 0;
 }
