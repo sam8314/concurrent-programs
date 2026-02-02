@@ -154,12 +154,14 @@ int main(int argc, char *argv[]) {
     int matrixSize[] = {1000,2000,3000,4000,5000,6000,7000,8000,9000,10000};
     FILE *fp = fopen("results.txt", "w");
     fprintf(fp, "Size \t NumWorkers \t AvgParTime \t AvgSeqTime \t Speedup\n");
+
+    //loop on matrix sizes
     for (int sizeIdx = 0; sizeIdx < len(matrixSize); sizeIdx++){
       size = matrixSize[sizeIdx];
 
-      //TODO : compute average over 10 runs
-      
-      for (numWorkers = 1; numWorkers <= MAXWORKERS; numWorkers++){
+      double avg_par_time = 0;
+      double avg_seq_time = 0;
+      for (int run = 0; run < 10; run++){
         /* initialize the matrix sequentially*/
         srand(time(NULL));
         for (i = 0; i < size; i++) {
@@ -169,9 +171,14 @@ int main(int argc, char *argv[]) {
         }
         double par_time = parallel(false, matrix, size);
         double seq_time = sequential(false, matrix, size);
-        double speedup = seq_time / par_time;
+        avg_par_time += par_time;
+        avg_seq_time += seq_time;
+      }
+      avg_par_time /= 10.0;
+      avg_seq_time /= 10.0;
+      double speedup = avg_seq_time / avg_par_time;
 
-        fprintf(fp, "%d \t %d \t %g \t %g \t %g\n", size, numWorkers, par_time, seq_time, speedup);
+        fprintf(fp, "%d \t %d \t %g \t %g \t %g\n", size, numWorkers, avg_par_time, avg_seq_time, speedup);
       }
     }
     fclose(fp);
