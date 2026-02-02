@@ -37,6 +37,25 @@ double read_timer() {
     gettimeofday( &end, NULL );
     return (end.tv_sec - start.tv_sec) + 1.0e-6 * (end.tv_usec - start.tv_usec);
 }
+int compare(const void *a, const void *b) {
+    return (*(int *)a - *(int *)b);  
+}
+double findMedian(double arr[], int n) {
+    qsort(arr, n, sizeof(int), compare);
+
+  	// If even, median is the average of the two
+  	// middle elements
+    if (n % 2 == 0) {
+        return (arr[n / 2 - 1] + arr[n / 2]) / 2.0;
+    }
+  
+  	// If odd, median is the middle element
+  	else {
+        return arr[n / 2];
+    }
+}
+
+/* WORK ON MATRIX*/
 double sequential(bool print, int matrix[MAXSIZE][MAXSIZE], int size){
   /* SEQUENTIAL VERIFICATION OF RESULTS*/
   int i, j;
@@ -119,24 +138,9 @@ double parallel(bool print, int matrix[MAXSIZE][MAXSIZE], int size){
   }
   return end_time - start_time;
 }
-int compare(const void *a, const void *b) {
-    return (*(int *)a - *(int *)b);  
-}
-double findMedian(double arr[], int n) {
-    qsort(arr, n, sizeof(int), compare);
 
-  	// If even, median is the average of the two
-  	// middle elements
-    if (n % 2 == 0) {
-        return (arr[n / 2 - 1] + arr[n / 2]) / 2.0;
-    }
-  
-  	// If odd, median is the middle element
-  	else {
-        return arr[n / 2];
-    }
-}
 
+/* MAIN THREAD */
 int main(int argc, char *argv[]) {
   int i, j, total=0;
 
