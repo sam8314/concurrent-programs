@@ -34,8 +34,11 @@ double start_time, end_time;
 #include <time.h>
 #include <sys/time.h>
 #include <limits.h>
+#include <string.h> //for memcpy
+
 #define MAXSIZE 10000  /* maximum list size */
 #define MAXWORKERS 8   /* maximum number of workers */
+//#define SEQ_CUTOFF 32 //does improve performance on macOS
 
 int numWorkers;
 int size; 
@@ -54,11 +57,15 @@ double read_timer() {
     gettimeofday( &end, NULL );
     return (end.tv_sec - start.tv_sec) + 1.0e-6 * (end.tv_usec - start.tv_usec);
 }
-int compare(const void *a, const void *b) {
-    return (*(int *)a - *(int *)b);  
+
+int compare_double(const void *a, const void *b) { //compares double instead of int
+  double da = *(double *)a;
+  double db = *(double *)b;
+  return (da > db) - (da < db);
+
 }
 double findMedian(double arr[], int n) {
-    qsort(arr, n, sizeof(int), compare);
+    qsort(arr, n, sizeof(double), compare_double); //adapted to compare_double
 
   	// If even, median is the average of the two
   	// middle elements
@@ -77,11 +84,13 @@ void swap (int* a, int* b) {
     *b = t;
 }
 int split(int arr[], int low, int high) {
+  int pivotIdx = low + rand()%(high-low +1); //randomized pivot index
+  swap(&arr[pivotIdx], &arr[high]); //move pivot to end
     int pivot = arr[high]; 
     int i = (low-1);
 
     for (int j=low;j<=high-1; j++) {
-        if (arr[j] <= pivot) {
+        if (arr[j] < pivot) { //was <=
             i++; 
             swap(&arr[i], &arr[j]);
         }
@@ -91,21 +100,31 @@ int split(int arr[], int low, int high) {
 }
 
 /* QUICKSORTS */
-void seqQuickSort(int arr[], int low, int high) {
-    if (low < high) {
-        int splitIdx = split(arr, low, high);
-        seqQuickSort(arr, low, splitIdx-1);
-        seqQuickSort(arr, splitIdx+1, high);
+void seqQuickSort(int arr[], int low, int high) { //tail recursion elimination to prevent bus error/stack overflow on macOS for worst case partitions
+    while (low < high) {
+        int splitIdx = split(arr, low, high);//moved inside loop
+        //recurse on smaller side, loop on larger side to achieve log(n) stack
+        if(splitIdx-low<high-splitIdx){
+        seqQuickSort(arr, low, splitIdx-1); //single recursive call
+        low = splitIdx +1; //tail recursion eliminated
+        } else{
+        seqQuickSort(arr, splitIdx+1, high); //single recursive call
+        high = splitIdx -1;
+        }
     }
 }
-void parQuickSort(int arr[], int low, int high) {
+void parQuickSort(int arr[], int low, int high) { // with firstprivate to fetch indices for each task safely 
     if (low < high) {
+     // if(high -low <SEQ_CUTOFF) { //avoid deep recurison on very small parts
+       // seqQuickSort(arr,low,high);
+        //return;
+     // }
         int splitIdx = split(arr, low, high);
 
-        #pragma omp task shared(arr) if(high-low>1000)
+        #pragma omp task shared(arr) firstprivate(low, splitIdx) if(high-low>1000)
         parQuickSort(arr, low, splitIdx-1);
 
-        #pragma omp task shared(arr) if(high-low>1000)
+        #pragma omp task shared(arr) firstprivate(high, splitIdx) if(high-low>1000)
         parQuickSort(arr, splitIdx+1, high);
 
         #pragma omp taskwait // wait for both tasks to finish
@@ -160,57 +179,76 @@ int main(int argc, char *argv[]) {
     numWorkers = (argc > 2)? atoi(argv[2]) : MAXWORKERS;
     if (size > MAXSIZE) size = MAXSIZE;
     if (numWorkers > MAXWORKERS) numWorkers = MAXWORKERS;
+
+    int list_copy[MAXSIZE]; // added to compare same input for seq/par
+
     /* initialize the list sequentially*/
     srand(time(NULL));
     for (i = 0; i < size; i++) {
       //printf("[ ");
         list[i] = rand()%999;
+    }
         //printf(" %d", list[i]);
+        memcpy(list_copy, list, size * sizeof(int)); //keeps identical input for sequential
+        double par = parallel(true, list, size); 
+        double seq = sequential(true, list_copy, size); // we use the copy not the already sorted list
+        printf("Speedup: %g\n", seq/par); //reports speedup in single run mode
+        return 0;
+
+
     }
       //printf(" ]\n");
-    
-    double par = parallel(true, list, size);
-    double seq = sequential(true, list, size);
-  }
+   
+  
 
   /* store runtime time, speedup in output file with different sizes and number of workers
     run it 5 times and take median values for runtimes
     matrix size follows 10, 100, 1000, ..., MAXSIZE
     number of workers follows 1, 2, 3, ..., MAXWORKERS
   */
-  else{
     int listSize[] = {1000,2000,3000,4000,5000,6000,7000,8000,9000,10000};
     FILE *fp = fopen("results.txt", "w");
     fprintf(fp, "Size \t NumWorkers \t MedParTime \t MedSeqTime \t Speedup\n");
+
     printf("opened file\n");
+    fflush(fp); // ensures outputs appear even if it crashes
+
+    srand(time(NULL)); //seed once not inside loops 
 
     //loop on list sizes
-    for (int sizeIdx = 0; sizeIdx < sizeof(listSize)/sizeof(listSize[0]); sizeIdx++){
+    for (int sizeIdx = 0; sizeIdx < 10; sizeIdx++){
       size = listSize[sizeIdx];
+      if (size >MAXSIZE ) size = MAXSIZE; //safety 
 
-      double par_times[5];
-      double seq_times[5];
-      for (int run = 0; run < 5; run++){
+      for (numWorkers =1; numWorkers<= 4; numWorkers++){
+        omp_set_num_threads(numWorkers); //Specify the number of processors used by specifying a different number of threads by calling  omp_set_num_threads() as requested in the assignment
+
+        double par_times[5];
+        double seq_times[5];
+        int base[MAXSIZE]; // store identical input across seq/par
+        for ( int run = 0; run <5; run++) {
+
+        
         printf("Running size %d, run %d\n", size, run+1);
         /* initialize the matrix sequentially*/
-        srand(time(NULL));
         for (i = 0; i < size; i++) {
-          list[i] = rand()%999;
+          base[i] = rand()%999; //fill base
         }
-        double par_time = parallel(false, list, size);
-        double seq_time = sequential(false, list, size);
-        par_times[run] = par_time;
-        seq_times[run] = seq_time;
+        memcpy(list, base, size * sizeof(int)); //same input for parallel
+        par_times[run] = parallel(false, list, size);
+        memcpy(list, base, size * sizeof(int)); // same input for sequential 
+
+        seq_times[run] = sequential(false, list, size);
       }
       double med_seq_time = findMedian(seq_times, 5);
       double med_par_time = findMedian(par_times, 5);
+      fprintf(fp, "%d \t %d \t %g \t %g \t %g\n", size, numWorkers, med_par_time, med_seq_time, med_seq_time/med_par_time);
+      fflush(fp); //flush each row
 
-      double speedup = med_seq_time / med_par_time;
-      fprintf(fp, "%d \t %d \t %g \t %g \t %g\n", size, numWorkers, med_par_time, med_seq_time, speedup);
+    }
     }
     fclose(fp);
     printf("closed file\n");
-  }
-
-  return 0;
+    return 0;
+  
 }
