@@ -168,7 +168,21 @@ double parallel(bool print, int list[], int size) {
   }
   return end_time - start_time;
 }
+void printEdges (int arr[], int size ) { //prints first 5 element and last 5 elements of the sorted arrays
+  int k = 5;
+  if ( size <2 *k ) k = size /2;
+  printf("First %d elements: ", k);
+  for ( int i =0; i<k; i++) {
+    printf("%d", arr[i]);
 
+  }
+  printf("\nLast %d elements: ", k);
+  for ( int i = size - k;i<size; i++) {
+    printf("%d", arr[i]);
+
+}
+printf("\n");
+}
 /* MAIN THREAD */
 int main(int argc, char *argv[]) {
   int i, j, total=0;
@@ -191,7 +205,10 @@ int main(int argc, char *argv[]) {
         //printf(" %d", list[i]);
         memcpy(list_copy, list, size * sizeof(int)); //keeps identical input for sequential
         double par = parallel(true, list, size); 
+        printEdges(list,size);
+
         double seq = sequential(true, list_copy, size); // we use the copy not the already sorted list
+        printEdges(list_copy, size);
         printf("Speedup: %g\n", seq/par); //reports speedup in single run mode
         return 0;
 
