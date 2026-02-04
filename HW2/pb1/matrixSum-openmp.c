@@ -10,13 +10,13 @@
 
 double start_time, end_time;
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdbool.h>
-#include <time.h>
-#include <sys/time.h>
-#include <limits.h>
+#include <stdio.h> // for printf
+#include <stdlib.h> // for atoi, rand
+#include <stdio.h> // for FILE operations
+#include <stdbool.h> // for bool type
+#include <time.h> // for time
+#include <sys/time.h> 
+#include <limits.h> // for INT_MAX, INT_MIN
 #define MAXSIZE 10000  /* maximum matrix size */
 #define MAXWORKERS 8   /* maximum number of workers */
 
