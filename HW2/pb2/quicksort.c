@@ -151,8 +151,10 @@ double parallel(bool print, int list[], int size) {
   /* PARALLELE WORK*/
   start_time = omp_get_wtime();
 
-  #pragma omp parallel
+  //create threads once
+  #pragma omp parallel  
   {
+   //ensure only one thread starts the initial recursion
     #pragma omp single
     {
         parQuickSort(list, 0, size-1);
