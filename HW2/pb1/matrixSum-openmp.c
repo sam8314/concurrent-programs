@@ -1,8 +1,9 @@
 /* matrix summation using OpenMP
 
    usage with gcc (version 4.2 or higher required):
-     gcc -O -fopenmp -o matrixSum-openmp matrixSum-openmp.c 
-     ./matrixSum-openmp size numWorkers
+     gcc -O -fopenmp -o m matrixSum-openmp.c 
+     ./m [size] [numWorkers] for full config and see results
+      ./m for storing results in results.txt
 
 */
 
@@ -93,7 +94,7 @@ double sequential(bool print, int matrix[MAXSIZE][MAXSIZE], int size){
   }
   return end_time - start_time;
 }
-double parallel(bool print, int matrix[MAXSIZE][MAXSIZE], int size){
+double parallel(bool print, int matrix[MAXSIZE][MAXSIZE], int size, int numWorkers){
   /* PARALLELE WORK*/
   int global_min = INT_MAX;
   int global_max = INT_MIN;
@@ -161,7 +162,7 @@ int main(int argc, char *argv[]) {
       //printf(" ]\n");
     }
     
-    double par = parallel(true, matrix, size);
+    double par = parallel(true, matrix, size, numWorkers);
     double seq = sequential(true, matrix, size);
   }
 
@@ -182,6 +183,9 @@ int main(int argc, char *argv[]) {
 
       double par_times[5];
       double seq_times[5];
+
+      //loop on numworkers
+      for (numWorkers = 1; numWorkers <= MAXWORKERS; numWorkers=numWorkers*2){
       for (int run = 0; run < 5; run++){
         printf("Running size %d, run %d\n", size, run+1);
         /* initialize the matrix sequentially*/
@@ -191,7 +195,7 @@ int main(int argc, char *argv[]) {
             matrix[i][j] = rand()%999;
           }
         }
-        double par_time = parallel(false, matrix, size);
+        double par_time = parallel(false, matrix, size, numWorkers);
         double seq_time = sequential(false, matrix, size);
         par_times[run] = par_time;
         seq_times[run] = seq_time;
@@ -200,7 +204,10 @@ int main(int argc, char *argv[]) {
       double med_par_time = findMedian(par_times, 5);
 
       double speedup = med_seq_time / med_par_time;
-      fprintf(fp, "%d \t %d \t %g \t %g \t %g\n", size, numWorkers, med_par_time, med_seq_time, speedup);
+      fprintf(fp, "%d & %d & %g & %g & %g \\\\ \n", size, numWorkers, med_par_time, med_seq_time, speedup);
+
+      }
+      fprintf(fp, "\\hline \n");
     }
     fclose(fp);
     printf("closed file\n");
