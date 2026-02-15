@@ -1,0 +1,2 @@
+- `javac SpaceStationSimulation.java` to compile
+- `java SpaceStationSimulation` to run
