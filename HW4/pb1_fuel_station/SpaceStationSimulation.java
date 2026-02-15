@@ -4,15 +4,33 @@ import java.util.Random;
 // Monitor: The Space Station
 // ===========================================================
 class SpaceStationMonitor {
-
-    // --- State Variables ---
+    private final int maxDockingPlaces;
+    private final int maxNitrogen;
+    private final int maxQuantum;
+    private int dockedVehicles = 0;
+    private int nitrogen = 0;
+    private int quantumFluid = 0;
 
     // --- Constructor ---
     public SpaceStationMonitor(int V, int N, int Q) {
+        this.maxDockingPlaces = V;
+        this.maxNitrogen = N;
+        this.maxQuantum = Q;
+        this.nitrogen = N; //start full
+        this.quantumFluid = Q;
+        System.out.printf("Station initialized: Docks=%d, N=%d, Q=%d%n", V, N, Q);
     }
 
-    // --- Monitor Methods ---
+    /**
+     * called by a vehicle to request docking and the required fuel
+     * a positive amount means it wants to take fuel 
+     * a negative amount means it wants to deposit fuel 
+     * blocks the vehicle until its request can be satisfied
+     */
     public synchronized void requestDockAndFuel(int nReq, int qReq, String vehicleName) {
+        // Determine if the vehicle is a consumer (needs fuel) or supplier (brings fuel)
+        boolean isConsumer = (nReq > 0 || qReq > 0);
+        boolean isSupplier = (nReq < 0 || qReq < 0);
 
         System.out.printf("--> %s arrives. Needs: N=%d, Q=%d. Station: Docks=%d/%d, N=%d/%d, Q=%d/%d%n",
                 vehicleName, nReq, qReq,
@@ -22,18 +40,64 @@ class SpaceStationMonitor {
 
         //vehicle waits while its conditions are not met
         while (true) {
+            boolean canProceed = true;
+
+            //check for free docking place
+            if (dockedVehicles >= maxDockingPlaces) {
+                canProceed = false;
+            }
+
+            //check fuel conditions
+            if (isConsumer) {
+                if (nReq > 0 && nitrogen < nReq) {canProceed = false;}
+                if (qReq > 0 && quantumFluid < qReq) {canProceed = false;}
+            } else if (isSupplier) {
+                if (nReq < 0 && (nitrogen-nReq)<maxNitrogen) {canProceed = false;}
+                if (qReq < 0 && (quantumFluid-qReq)>maxQuantum){canProceed = false;}
+            }
+
+            if (canProceed) {break;}
+
+            //if conditions not met wait for notification
+            try {
+                System.out.printf("<-- %s waits. conditions not met%n", vehicleName);
+                wait();
+                System.out.printf("--> %s wakes up. re-checking conditions%n", vehicleName);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                System.out.printf("%s was interrupted%n", vehicleName);
+                return;
+            }
         }
 
-        System.out.printf("station state after %s: Docks=%d/%d, N=%d/%d, Q=%d/%d%n",
+        //dock and update fuel
+        dockedVehicles++;
+        if (isConsumer) {
+            nitrogen -= nReq;
+            quantumFluid -= qReq;
+            System.out.printf("    %s fueled! it took: N=%d, Q=%d%n", vehicleName, nReq, qReq);
+        } else if (isSupplier) {
+            nitrogen += (-nReq); //make negative amount positive for addition
+            quantumFluid += (-qReq);
+            System.out.printf("    %s supplied fuel! it left: N=%d, Q=%d%n", vehicleName, (-nReq), (-qReq));
+        }
+
+        System.out.printf("    station after %s: Docks=%d/%d, N=%d/%d, Q=%d/%d%n",
                 vehicleName,
                 dockedVehicles, maxDockingPlaces,
                 nitrogen, maxNitrogen,
                 quantumFluid, maxQuantum);
     }
 
+    /**
+     * called by a vehicle when it leaves the station
+     * frees up a docking place and notifies other waiting vehicles
+     */
     public synchronized void leaveStation(String vehicleName) {
         dockedVehicles--;
-        notifyAll(); //wake all waiting vehicles to re-check their conditions
+        System.out.printf("<-- %s leaves. docks now: %d/%d. notifying others%n",
+                vehicleName, dockedVehicles, maxDockingPlaces);
+        notifyAll(); // wake up all waiting vehicles to re-check their conditions
     }
 }
 
@@ -93,6 +157,8 @@ class SupplyVehicle extends Thread {
         super(name);
         this.station = station;
         this.rounds = rounds;
+        this.nSupply = -Math.abs(nSupply); // make sure its neg
+        this.qSupply = -Math.abs(qSupply);
         this.nReqForReturn = nReqForReturn;
         this.qReqForReturn = qReqForReturn;
     }
