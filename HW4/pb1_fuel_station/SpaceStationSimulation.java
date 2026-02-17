@@ -11,7 +11,6 @@ class SpaceStationMonitor {
     private int nitrogen = 0;
     private int quantumFluid = 0;
 
-    // --- Constructor ---
     public SpaceStationMonitor(int V, int N, int Q) {
         this.maxDockingPlaces = V;
         this.maxNitrogen = N;
@@ -52,7 +51,7 @@ class SpaceStationMonitor {
                 if (nReq > 0 && nitrogen < nReq) {canProceed = false;}
                 if (qReq > 0 && quantumFluid < qReq) {canProceed = false;}
             } else if (isSupplier) {
-                if (nReq < 0 && (nitrogen-nReq)<maxNitrogen) {canProceed = false;}
+                if (nReq < 0 && (nitrogen-nReq)>maxNitrogen) {canProceed = false;}
                 if (qReq < 0 && (quantumFluid-qReq)>maxQuantum){canProceed = false;}
             }
 
@@ -174,9 +173,12 @@ class SupplyVehicle extends Thread {
                 station.requestDockAndFuel(nSupply, qSupply, this.getName());
                 Thread.sleep(rand.nextInt(150)); // Time to unload
 
+                station.leaveStation(this.getName()); // make some room for others to avoid deadlock
+                Thread.sleep(rand.nextInt(50)); // short travel time
+
                 // 2. as an ordinary vehicle, request fuel for the return trip
                 station.requestDockAndFuel(nReqForReturn, qReqForReturn, this.getName() + " (return)");
-                Thread.sleep(rand.nextInt(150));
+                Thread.sleep(rand.nextInt(150)); 
 
                 // 3. leave the station
                 station.leaveStation(this.getName() + " (combined)");
