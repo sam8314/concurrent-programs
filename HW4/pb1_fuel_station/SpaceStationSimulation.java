@@ -1,103 +1,112 @@
 import java.util.Random;
-
+/*
+Space Station Simulation: 
+A) Ordinary vehicles consume fuel
+B) Supply vehicles supply fuel and consume some fuel for their return trip */
 // ===========================================================
-// Monitor: The Space Station
+// Monitor: The Space Station is a synchronized object that protects the shared state---> current nitrogen and quantumFluid levels AND current number of docked vehicles
+// - at most V vehicles can be docked at once, nitrogen  <= N, quantum <= Q.
+// consumer can only take fuels if the levels allow so, suppliers can only deposit if levels allow deposit.
+// n
 // ===========================================================
 class SpaceStationMonitor {
-    private final int maxDockingPlaces;
-    private final int maxNitrogen;
-    private final int maxQuantum;
-    private int dockedVehicles = 0;
-    private int nitrogen = 0;
-    private int quantumFluid = 0;
 
+    // --- State Variables ---
+    public final int maxDockingPlaces;
+    public final int maxNitrogen; //N
+    public final int maxQuantum; //Q
+//  shared state variables protected by monitor lock
+    private int dockedVehicles=0; //init to 0
+    private int nitrogen; // nitrogen stored
+    private int quantumFluid; // quantum stored
+
+
+    // --- Constructor ---
     public SpaceStationMonitor(int V, int N, int Q) {
+
         this.maxDockingPlaces = V;
         this.maxNitrogen = N;
         this.maxQuantum = Q;
-        this.nitrogen = N; //start full
+        //starting full - supplier must wait for space to be freed befofre depositing
+        this.nitrogen = N;
         this.quantumFluid = Q;
-        System.out.printf("Station initialized: Docks=%d, N=%d, Q=%d%n", V, N, Q);
-    }
 
+    }
+    //checks if station can take fuel
+    private boolean canTake(int nReq, int qReq){ //nReq & qReq >=0
+        return nitrogen >= nReq && quantumFluid >=qReq;
+    }
+    //checks if fuel can be deposited at station
+    private boolean canDeposit(int nAdd, int qAdd){ //nAdd & qAdd >=0
+        return nitrogen +nAdd<= maxNitrogen && quantumFluid+qAdd<= maxQuantum;
+    }
     /**
      * called by a vehicle to request docking and the required fuel
      * a positive amount means it wants to take fuel 
      * a negative amount means it wants to deposit fuel 
-     * blocks the vehicle until its request can be satisfied
+     * The calling thread blocks until all the below conditions are satisfied: 1)docking place available, 2) enough fuel for take requests, 3) enough storage for deposit requests
+     * ONLY ONE THREAD AT THE TIME CAN EVAL AND UPDATE THE STATE. WAITING THREADS RELEASE MONITOR LOCK WHEN CALLING WAIT()
      */
-    public synchronized void requestDockAndFuel(int nReq, int qReq, String vehicleName) {
-        // Determine if the vehicle is a consumer (needs fuel) or supplier (brings fuel)
-        boolean isConsumer = (nReq > 0 || qReq > 0);
-        boolean isSupplier = (nReq < 0 || qReq < 0);
 
+    // --- Monitor Methods ---
+    public synchronized void requestDockAndFuel(int nReq, int qReq, String vehicleName) throws InterruptedException{
+        //ARRIVAL & CURRENT STATE
         System.out.printf("--> %s arrives. Needs: N=%d, Q=%d. Station: Docks=%d/%d, N=%d/%d, Q=%d/%d%n",
                 vehicleName, nReq, qReq,
                 dockedVehicles, maxDockingPlaces,
                 nitrogen, maxNitrogen,
                 quantumFluid, maxQuantum);
+        //math conversion into non neg take and dep parts
+        int takeN = Math.max(0, nReq);
+        int takeQ = Math.max(0, qReq);
 
-        //vehicle waits while its conditions are not met
-        while (true) {
-            boolean canProceed = true;
+        int depN = Math.max(0, -nReq);
+        int depQ = Math.max(0, -qReq);
 
-            //check for free docking place
-            if (dockedVehicles >= maxDockingPlaces) {
-                canProceed = false;
+        
+
+        //vehicle waits while until dock and transaction completion happens safely 
+        while (true) { // to avoid other threads consuming or altering resources before a recheck 
+            boolean dockFree = dockedVehicles <maxDockingPlaces; //COND A) DOCK AVAILABLE? 
+            boolean take = canTake(takeN, takeQ); //COND B) ENOUGH FUEL TO TAKE?
+            boolean deposit = canDeposit(depN, depQ); //COND C) ENOUGH FREE SPACE TO DEPOSIT?
+            /*proceeds if all conditions are met */
+            if(dockFree && take && deposit) { 
+                break;
             }
-
-            //check fuel conditions
-            if (isConsumer) {
-                if (nReq > 0 && nitrogen < nReq) {canProceed = false;}
-                if (qReq > 0 && quantumFluid < qReq) {canProceed = false;}
-            } else if (isSupplier) {
-                if (nReq < 0 && (nitrogen-nReq)>maxNitrogen) {canProceed = false;}
-                if (qReq < 0 && (quantumFluid-qReq)>maxQuantum){canProceed = false;}
-            }
-
-            if (canProceed) {break;}
-
-            //if conditions not met wait for notification
-            try {
-                System.out.printf("<-- %s waits. conditions not met%n", vehicleName);
+           
+            //prints why we wait
+            System.out.printf(" %s waits. Need dock=%s, take=%s, dep=%s. Station: Docks=%d/%d, N=%d/%d, Q=%d/%d%n", vehicleName, dockFree? "OK" : "NO",
+                take ? "OK": "NO", deposit ? "OK": "NO", dockedVehicles, maxDockingPlaces, nitrogen, maxNitrogen, quantumFluid, maxQuantum);
+                /*release monitor lock
+                sleeps until station state changes
+                calls notifyAll() . when woke, re check cond*/
                 wait();
-                System.out.printf("--> %s wakes up. re-checking conditions%n", vehicleName);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                System.out.printf("%s was interrupted%n", vehicleName);
-                return;
-            }
         }
-
-        //dock and update fuel
+        //if all the above cond met, we can perform the dock (ATOMIC UPDATE)
         dockedVehicles++;
-        if (isConsumer) {
-            nitrogen -= nReq;
-            quantumFluid -= qReq;
-            System.out.printf("    %s fueled! it took: N=%d, Q=%d%n", vehicleName, nReq, qReq);
-        } else if (isSupplier) {
-            nitrogen += (-nReq); //make negative amount positive for addition
-            quantumFluid += (-qReq);
-            System.out.printf("    %s supplied fuel! it left: N=%d, Q=%d%n", vehicleName, (-nReq), (-qReq));
-        }
-
-        System.out.printf("    station after %s: Docks=%d/%d, N=%d/%d, Q=%d/%d%n",
+        //take (taken from storage)
+        nitrogen-=takeN;
+        quantumFluid-=takeQ;
+        //deposit (added to storage)
+        nitrogen += depN;
+        quantumFluid += depQ;
+        //station state after 
+        System.out.printf("station state after %s: Docks=%d/%d, N=%d/%d, Q=%d/%d%n",
                 vehicleName,
                 dockedVehicles, maxDockingPlaces,
                 nitrogen, maxNitrogen,
                 quantumFluid, maxQuantum);
+        notifyAll(); //wakes up all waiting threads so they can re check conditions as they may have been updated 
     }
 
-    /**
-     * called by a vehicle when it leaves the station
-     * frees up a docking place and notifies other waiting vehicles
-     */
     public synchronized void leaveStation(String vehicleName) {
         dockedVehicles--;
-        System.out.printf("<-- %s leaves. docks now: %d/%d. notifying others%n",
-                vehicleName, dockedVehicles, maxDockingPlaces);
-        notifyAll(); // wake up all waiting vehicles to re-check their conditions
+        System.out.printf("<-- %s leaves. Station: Docks=%d/%d, N=%d/%d, Q=%d/%d%n", vehicleName, dockedVehicles, maxDockingPlaces, nitrogen, maxNitrogen, quantumFluid, maxQuantum);
+        notifyAll(); //wake all waiting vehicles to re-check their conditions
+
     }
+
 }
 
 // ===========================================================
@@ -141,11 +150,12 @@ class OrdinaryVehicle extends Thread {
         System.out.println(this.getName() + " finished its rounds.");
     }
 }
+    
 
 class SupplyVehicle extends Thread {
     private final SpaceStationMonitor station;
     private final int rounds;
-    private final int nSupply; 
+    private final int nSupply; // negative means deposit by our convention? we'll pass negative in main OR pass positive and negate
     private final int qSupply; 
     private final int nReqForReturn; //amount to take for return trip
     private final int qReqForReturn;
@@ -156,10 +166,10 @@ class SupplyVehicle extends Thread {
         super(name);
         this.station = station;
         this.rounds = rounds;
-        this.nSupply = -Math.abs(nSupply); // make sure its neg
-        this.qSupply = -Math.abs(qSupply);
         this.nReqForReturn = nReqForReturn;
         this.qReqForReturn = qReqForReturn;
+        this.nSupply = nSupply;
+        this.qSupply = qSupply;
     }
 
     @Override
@@ -170,18 +180,16 @@ class SupplyVehicle extends Thread {
                 Thread.sleep(rand.nextInt(600));
 
                 // 1. arrive and deposit fuel (as a supplier)
-                station.requestDockAndFuel(nSupply, qSupply, this.getName());
+                station.requestDockAndFuel(nSupply, qSupply, this.getName()+ "#"+ (i+1)+ "(unload)");
                 Thread.sleep(rand.nextInt(150)); // Time to unload
-
-                station.leaveStation(this.getName()); // make some room for others to avoid deadlock
-                Thread.sleep(rand.nextInt(50)); // short travel time
+                station.leaveStation(this.getName() +"#"+ (i+1)+ " (unload)");
 
                 // 2. as an ordinary vehicle, request fuel for the return trip
-                station.requestDockAndFuel(nReqForReturn, qReqForReturn, this.getName() + " (return)");
-                Thread.sleep(rand.nextInt(150)); 
+                station.requestDockAndFuel(nReqForReturn, qReqForReturn, this.getName() +"#"+ (i+1)+ " (return)");
+                Thread.sleep(rand.nextInt(150));
 
                 // 3. leave the station
-                station.leaveStation(this.getName() + " (combined)");
+                station.leaveStation(this.getName() +"#"+ (i+1)+ " (return)");
 
                 //return trip and next arrival
                 Thread.sleep(rand.nextInt(1000));
@@ -192,7 +200,7 @@ class SupplyVehicle extends Thread {
                 break;
             }
         }
-        System.out.println(this.getName() + " finished its rounds.");
+        System.out.println(this.getName() + " finished its rounds!");
     }
 }
 
